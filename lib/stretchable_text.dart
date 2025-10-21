@@ -17,6 +17,7 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   // List of text overlays
   List<_TextOverlay> texts = [];
   int? _editingIndex;
+  Color _selectedColor = Colors.white;
 
   // Pick video from gallery or camera
   Future<void> _pickVideo() async {
@@ -37,10 +38,9 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
 
   void _addText(Offset position) {
     setState(() {
-      texts.add(_TextOverlay(
-        text: '',
-        position: position,
-      ));
+      texts.add(
+        _TextOverlay(text: '', position: position, color: _selectedColor),
+      );
       _editingIndex = texts.length - 1;
     });
   }
@@ -48,6 +48,18 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   void _setEditingIndex(int? index) {
     setState(() {
       _editingIndex = index;
+      if (index != null) {
+        _selectedColor = texts[index].color;
+      }
+    });
+  }
+
+  void _updateTextColor(Color color) {
+    setState(() {
+      _selectedColor = color;
+      if (_editingIndex != null) {
+        texts[_editingIndex!].color = color;
+      }
     });
   }
 
@@ -76,6 +88,18 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
               },
               child: Stack(
                 children: [
+                  Positioned(
+                    top: 40,
+                    left: 20,
+                    child: SafeArea(
+                      child: FloatingActionButton(
+                        mini: true,
+                        backgroundColor: Colors.black54,
+                        onPressed: () => Navigator.pop(context),
+                        child: const Icon(Icons.arrow_back),
+                      ),
+                    ),
+                  ),
                   // Full-screen video
                   SizedBox.expand(
                     child: FittedBox(
@@ -113,42 +137,19 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
                         }
                       },
                     ),
-                  // Optional: Floating back button
-                  Positioned(
-                    top: 40,
-                    left: 20,
-                    child: SafeArea(
-                      child: FloatingActionButton(
-                        mini: true,
-                        backgroundColor: Colors.black54,
-                        onPressed: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back),
+                  // Color Picker - shown only when editing
+                  if (_editingIndex != null)
+                    Positioned(
+                      left: 20,
+                      top: 0,
+                      bottom: 0,
+                      child: _VerticalColorPicker(
+                        onColorChanged: _updateTextColor,
+                        initialColor: _selectedColor,
                       ),
                     ),
-                  ),
-                  // Instruction text
-                  // if (texts.isEmpty)
-                  //   const Positioned(
-                  //     bottom: 100,
-                  //     left: 0,
-                  //     right: 0,
-                  //     child: Center(
-                  //       child: Text(
-                  //         'Double tap to add text',
-                  //         style: TextStyle(
-                  //           color: Colors.white,
-                  //           fontSize: 18,
-                  //           shadows: [
-                  //             Shadow(
-                  //               blurRadius: 10.0,
-                  //               color: Colors.black,
-                  //               offset: Offset(0, 0),
-                  //             ),
-                  //           ],
-                  //         ),
-                  //       ),
-                  //     ),
-                  //   ),
+
+                  // Optional: Floating back button
                 ],
               ),
             ),
@@ -161,8 +162,181 @@ class _TextOverlay {
   String text;
   Offset position;
   double scale = 1.0;
+  Color color;
 
-  _TextOverlay({required this.text, required this.position});
+  _TextOverlay({
+    required this.text,
+    required this.position,
+    this.color = Colors.white,
+  });
+}
+
+// Vertical Color Picker Widget
+class _VerticalColorPicker extends StatefulWidget {
+  final Function(Color) onColorChanged;
+  final Color initialColor;
+
+  const _VerticalColorPicker({
+    required this.onColorChanged,
+    required this.initialColor,
+  });
+
+  @override
+  State<_VerticalColorPicker> createState() => _VerticalColorPickerState();
+}
+
+class _VerticalColorPickerState extends State<_VerticalColorPicker> {
+  double _colorSliderPosition = 0;
+  double _pickerHeight = 0;
+
+  final List<Color> _colors = [
+    Color.fromARGB(255, 255, 0, 0),
+    Color.fromARGB(255, 255, 128, 0),
+    Color.fromARGB(255, 255, 255, 0),
+    Color.fromARGB(255, 128, 255, 0),
+    Color.fromARGB(255, 0, 255, 0),
+    Color.fromARGB(255, 0, 255, 128),
+    Color.fromARGB(255, 0, 255, 255),
+    Color.fromARGB(255, 0, 128, 255),
+    Color.fromARGB(255, 0, 0, 255),
+    Color.fromARGB(255, 127, 0, 255),
+    Color.fromARGB(255, 255, 0, 255),
+    Color.fromARGB(255, 255, 0, 127),
+    Color.fromARGB(255, 255, 255, 255),
+    Color.fromARGB(255, 0, 0, 0),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Find initial position based on color
+    _findPositionForColor(widget.initialColor);
+  }
+
+  void _findPositionForColor(Color color) {
+    // Find closest color in palette
+    int closestIndex = 0;
+    double minDistance = double.infinity;
+
+    for (int i = 0; i < _colors.length; i++) {
+      double distance = _colorDistance(color, _colors[i]);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    // Set position based on index
+    if (_pickerHeight > 0) {
+      _colorSliderPosition =
+          (closestIndex / (_colors.length - 1)) * _pickerHeight;
+    }
+  }
+
+  double _colorDistance(Color c1, Color c2) {
+    return ((c1.red - c2.red) * (c1.red - c2.red) +
+            (c1.green - c2.green) * (c1.green - c2.green) +
+            (c1.blue - c2.blue) * (c1.blue - c2.blue))
+        .toDouble();
+  }
+
+  Color _getColorAtPosition(double position) {
+    double ratio = (position / _pickerHeight).clamp(0.0, 1.0);
+    int index = (ratio * (_colors.length - 1)).floor();
+    int nextIndex = (index + 1).clamp(0, _colors.length - 1);
+
+    double localRatio = (ratio * (_colors.length - 1)) - index;
+
+    return Color.lerp(_colors[index], _colors[nextIndex], localRatio) ??
+        _colors[index];
+  }
+
+  void _colorChangeHandler(double position) {
+    if (position > _pickerHeight) position = _pickerHeight;
+    if (position < 0) position = 0;
+    setState(() {
+      _colorSliderPosition = position;
+    });
+    widget.onColorChanged(_getColorAtPosition(position));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          _pickerHeight = constraints.maxHeight * 0.6;
+          if (_colorSliderPosition == 0) {
+            _colorSliderPosition = _pickerHeight / 2;
+          }
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragStart: (details) =>
+                _colorChangeHandler(details.localPosition.dy - 15),
+            onVerticalDragUpdate: (details) =>
+                _colorChangeHandler(details.localPosition.dy - 15),
+            onTapDown: (details) =>
+                _colorChangeHandler(details.localPosition.dy - 15),
+            child: Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Container(
+                width: 30,
+                height: _pickerHeight,
+                decoration: BoxDecoration(
+                  border: Border.all(width: 2, color: Colors.white70),
+                  borderRadius: BorderRadius.circular(15),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: _colors,
+                  ),
+                ),
+                child: CustomPaint(
+                  painter: _VerticalSliderIndicatorPainter(
+                    _colorSliderPosition,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _VerticalSliderIndicatorPainter extends CustomPainter {
+  final double position;
+  _VerticalSliderIndicatorPainter(this.position);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, position);
+    canvas.drawCircle(
+      center,
+      10,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      center,
+      10,
+      Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_VerticalSliderIndicatorPainter old) =>
+      old.position != position;
 }
 
 // Widget for individual stretchable text
@@ -193,7 +367,6 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
   late TextEditingController _controller;
   late FocusNode _focusNode;
 
-  // Track positions
   late Offset _startPosition;
   late Offset _dragStartLocal;
   bool _isDragging = false;
@@ -255,12 +428,15 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
           if (!widget.isEditing && _isDragging) {
             setState(() {
               if (details.pointerCount == 1) {
-                // Single finger drag
-                widget.overlay.position = _startPosition + (details.localFocalPoint - _dragStartLocal);
+                widget.overlay.position =
+                    _startPosition +
+                    (details.localFocalPoint - _dragStartLocal);
               }
               if (details.pointerCount > 1) {
-                // Multi-finger pinch to scale
-                widget.overlay.scale = (_baseScale * details.scale).clamp(0.5, 5.0);
+                widget.overlay.scale = (_baseScale * details.scale).clamp(
+                  0.5,
+                  5.0,
+                );
               }
               widget.onUpdate();
             });
@@ -271,7 +447,6 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
         },
         onLongPress: () {
           if (!widget.isEditing) {
-            // Long press to delete
             showDialog(
               context: context,
               builder: (context) => AlertDialog(
@@ -311,21 +486,21 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
             decoration: BoxDecoration(
               color: widget.isEditing ? Colors.black38 : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
-              border: widget.isEditing 
-                ? Border.all(color: Colors.white, width: 2)
-                : null,
+              border: widget.isEditing
+                  ? Border.all(color: Colors.white, width: 2)
+                  : null,
             ),
             child: widget.isEditing
                 ? IntrinsicWidth(
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-                      cursorColor: Colors.white,
-                      style: const TextStyle(
+                      cursorColor: widget.overlay.color,
+                      style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: [
+                        color: widget.overlay.color,
+                        shadows: const [
                           Shadow(
                             blurRadius: 4.0,
                             color: Colors.black,
@@ -352,11 +527,13 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
                 : GestureDetector(
                     onTap: widget.onStartEdit,
                     child: Text(
-                      widget.overlay.text.isEmpty ? 'Tap to edit' : widget.overlay.text,
+                      widget.overlay.text.isEmpty
+                          ? 'Tap to edit'
+                          : widget.overlay.text,
                       style: TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.bold,
-                        color: widget.overlay.text.isEmpty ? Colors.white54 : Colors.white,
+                        color: Colors.white,
                         shadows: const [
                           Shadow(
                             blurRadius: 4.0,
