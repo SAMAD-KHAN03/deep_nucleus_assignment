@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:stroke_text/stroke_text.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:io';
 
@@ -13,7 +14,7 @@ class VideoWithTextOverlay extends StatefulWidget {
 class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   VideoPlayerController? _controller;
   final ImagePicker _picker = ImagePicker();
-
+  bool _isBackgroundMode = false;
   // List of text overlays
   List<_TextOverlay> texts = [];
   int? _editingIndex;
@@ -53,16 +54,18 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
       }
     });
   }
-
-  void _updateTextColor(Color color) {
-    setState(() {
-      _selectedColor = color;
-      if (_editingIndex != null) {
+void _updateTextColor(Color color) {
+  setState(() {
+    _selectedColor = color;
+    if (_editingIndex != null) {
+      if (_isBackgroundMode) {
+        texts[_editingIndex!].backgroundColor = color;
+      } else {
         texts[_editingIndex!].color = color;
       }
-    });
-  }
-
+    }
+  });
+}
   @override
   void dispose() {
     _controller?.dispose();
@@ -88,18 +91,6 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
               },
               child: Stack(
                 children: [
-                  Positioned(
-                    top: 40,
-                    left: 20,
-                    child: SafeArea(
-                      child: FloatingActionButton(
-                        mini: true,
-                        backgroundColor: Colors.black54,
-                        onPressed: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back),
-                      ),
-                    ),
-                  ),
                   // Full-screen video
                   SizedBox.expand(
                     child: FittedBox(
@@ -143,13 +134,38 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
                       left: 20,
                       top: 0,
                       bottom: 0,
-                      child: _VerticalColorPicker(
-                        onColorChanged: _updateTextColor,
-                        initialColor: _selectedColor,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _VerticalColorPicker(
+                            onColorChanged: _updateTextColor,
+                            initialColor: _selectedColor,
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isBackgroundMode
+                                  ? Colors.blueAccent
+                                  : Colors.black54,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                            onPressed: () {
+                              setState(
+                                () => _isBackgroundMode = !_isBackgroundMode,
+                              );
+                            },
+                            child: Text(
+                              _isBackgroundMode ? "BG Color" : "Text Color",
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-
-                  // Optional: Floating back button
                 ],
               ),
             ),
@@ -163,11 +179,13 @@ class _TextOverlay {
   Offset position;
   double scale = 1.0;
   Color color;
+  Color backgroundColor; // NEW
 
   _TextOverlay({
     required this.text,
     required this.position,
     this.color = Colors.white,
+    this.backgroundColor = Colors.transparent, // default no fill
   });
 }
 
@@ -209,12 +227,10 @@ class _VerticalColorPickerState extends State<_VerticalColorPicker> {
   @override
   void initState() {
     super.initState();
-    // Find initial position based on color
     _findPositionForColor(widget.initialColor);
   }
 
   void _findPositionForColor(Color color) {
-    // Find closest color in palette
     int closestIndex = 0;
     double minDistance = double.infinity;
 
@@ -226,7 +242,6 @@ class _VerticalColorPickerState extends State<_VerticalColorPicker> {
       }
     }
 
-    // Set position based on index
     if (_pickerHeight > 0) {
       _colorSliderPosition =
           (closestIndex / (_colors.length - 1)) * _pickerHeight;
@@ -411,14 +426,27 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // Ensure valid scale
+    final safeScale =
+        (widget.overlay.scale.isNaN ||
+            widget.overlay.scale.isInfinite ||
+            widget.overlay.scale <= 0)
+        ? 1.0
+        : widget.overlay.scale;
+
     return Positioned(
-      left: widget.overlay.position.dx - 40,
-      top: widget.overlay.position.dy - 40,
+      left: widget.overlay.position.dx + 60,
+      top: widget.overlay.position.dy,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onScaleStart: (details) {
           if (!widget.isEditing) {
-            _baseScale = widget.overlay.scale;
+            _baseScale =
+                (widget.overlay.scale.isNaN ||
+                    widget.overlay.scale.isInfinite ||
+                    widget.overlay.scale <= 0)
+                ? 1.0
+                : widget.overlay.scale;
             _startPosition = widget.overlay.position;
             _dragStartLocal = details.localFocalPoint;
             _isDragging = true;
@@ -433,18 +461,16 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
                     (details.localFocalPoint - _dragStartLocal);
               }
               if (details.pointerCount > 1) {
-                widget.overlay.scale = (_baseScale * details.scale).clamp(
-                  0.5,
-                  5.0,
-                );
+                final newScale = (_baseScale * details.scale).clamp(0.4, 6.0);
+                if (!newScale.isNaN && !newScale.isInfinite) {
+                  widget.overlay.scale = newScale;
+                }
               }
               widget.onUpdate();
             });
           }
         },
-        onScaleEnd: (details) {
-          _isDragging = false;
-        },
+        onScaleEnd: (details) => _isDragging = false,
         onLongPress: () {
           if (!widget.isEditing) {
             showDialog(
@@ -474,76 +500,72 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
             widget.onStartEdit();
           }
         },
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.diagonal3Values(
-            widget.overlay.scale,
-            widget.overlay.scale,
-            1.0,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: widget.isEditing ? Colors.black38 : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: widget.isEditing
-                  ? Border.all(color: Colors.white, width: 2)
-                  : null,
+        // Use SizedBox instead of Container with infinite constraints
+        child: SizedBox(
+          width: 200,
+          height: 80,
+          child: Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.diagonal3Values(safeScale, safeScale, 1.0),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: widget.isEditing ? Colors.black38 : Colors.transparent,
+                borderRadius: BorderRadius.circular(4),
+                border: widget.isEditing
+                    ? Border.all(color: Colors.white, width: 2)
+                    : null,
+              ),
+              child: widget.isEditing
+                  ? IntrinsicWidth(
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        cursorColor: widget.overlay.color,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: widget.overlay.color,
+                          shadows: const [
+                            Shadow(
+                              blurRadius: 4.0,
+                              color: Colors.black,
+                              offset: Offset(2, 2),
+                            ),
+                          ],
+                        ),
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(horizontal: 4),
+                          border: InputBorder.none,
+                          hintText: 'Enter text',
+                          hintStyle: TextStyle(color: Colors.white54),
+                        ),
+                        onChanged: (value) => widget.overlay.text = value,
+                        onSubmitted: (value) {
+                          widget.overlay.text = value;
+                          widget.onEndEdit();
+                        },
+                      ),
+                    )
+                  : GestureDetector(
+                      onTap: widget.onStartEdit,
+                      child: StrokeText(
+                        text: widget.overlay.text.isEmpty
+                            ? 'Tap to edit'
+                            : widget.overlay.text,
+                        textStyle: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: widget.overlay.text.isEmpty
+                              ? Colors.white54
+                              : widget.overlay.color,
+                        ),
+                        strokeColor: Colors.black,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
             ),
-            child: widget.isEditing
-                ? IntrinsicWidth(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      cursorColor: widget.overlay.color,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: widget.overlay.color,
-                        shadows: const [
-                          Shadow(
-                            blurRadius: 4.0,
-                            color: Colors.black,
-                            offset: Offset(2, 2),
-                          ),
-                        ],
-                      ),
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 4),
-                        border: InputBorder.none,
-                        hintText: 'Enter text',
-                        hintStyle: TextStyle(color: Colors.white54),
-                      ),
-                      onChanged: (value) {
-                        widget.overlay.text = value;
-                      },
-                      onSubmitted: (value) {
-                        widget.overlay.text = value;
-                        widget.onEndEdit();
-                      },
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: widget.onStartEdit,
-                    child: Text(
-                      widget.overlay.text.isEmpty
-                          ? 'Tap to edit'
-                          : widget.overlay.text,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: const [
-                          Shadow(
-                            blurRadius: 4.0,
-                            color: Colors.black,
-                            offset: Offset(2, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
           ),
         ),
       ),
