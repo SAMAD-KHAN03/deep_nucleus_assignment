@@ -14,7 +14,7 @@ class VideoWithTextOverlay extends StatefulWidget {
 class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   VideoPlayerController? _controller;
   final ImagePicker _picker = ImagePicker();
-  bool _isBackgroundMode = false;
+
   // List of text overlays
   List<_TextOverlay> texts = [];
   int? _editingIndex;
@@ -54,18 +54,16 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
       }
     });
   }
-void _updateTextColor(Color color) {
-  setState(() {
-    _selectedColor = color;
-    if (_editingIndex != null) {
-      if (_isBackgroundMode) {
-        texts[_editingIndex!].backgroundColor = color;
-      } else {
+
+  void _updateTextColor(Color color) {
+    setState(() {
+      _selectedColor = color;
+      if (_editingIndex != null) {
         texts[_editingIndex!].color = color;
       }
-    }
-  });
-}
+    });
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -134,38 +132,24 @@ void _updateTextColor(Color color) {
                       left: 20,
                       top: 0,
                       bottom: 0,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _VerticalColorPicker(
-                            onColorChanged: _updateTextColor,
-                            initialColor: _selectedColor,
-                          ),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _isBackgroundMode
-                                  ? Colors.blueAccent
-                                  : Colors.black54,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 6,
-                              ),
-                              textStyle: const TextStyle(fontSize: 12),
-                            ),
-                            onPressed: () {
-                              setState(
-                                () => _isBackgroundMode = !_isBackgroundMode,
-                              );
-                            },
-                            child: Text(
-                              _isBackgroundMode ? "BG Color" : "Text Color",
-                            ),
-                          ),
-                        ],
+                      child: _VerticalColorPicker(
+                        onColorChanged: _updateTextColor,
+                        initialColor: _selectedColor,
                       ),
                     ),
+                  // Floating back button
+                  Positioned(
+                    top: 40,
+                    left: 20,
+                    child: SafeArea(
+                      child: FloatingActionButton(
+                        mini: true,
+                        backgroundColor: Colors.black54,
+                        onPressed: () => Navigator.pop(context),
+                        child: const Icon(Icons.arrow_back),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -179,13 +163,11 @@ class _TextOverlay {
   Offset position;
   double scale = 1.0;
   Color color;
-  Color backgroundColor; // NEW
 
   _TextOverlay({
     required this.text,
     required this.position,
     this.color = Colors.white,
-    this.backgroundColor = Colors.transparent, // default no fill
   });
 }
 
@@ -435,8 +417,8 @@ class _StretchableTextWidgetState extends State<_StretchableTextWidget> {
         : widget.overlay.scale;
 
     return Positioned(
-      left: widget.overlay.position.dx + 60,
-      top: widget.overlay.position.dy,
+      left: widget.overlay.position.dx+60 ,
+      top: widget.overlay.position.dy ,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onScaleStart: (details) {
