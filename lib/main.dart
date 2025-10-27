@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:myapp/video_with_subtitle.dart';
-import 'package:myapp/custom_color_slider.dart';
 import 'package:myapp/stretchable_text.dart';
 
 void main() async {
@@ -23,6 +21,7 @@ void main() async {
   }
 
   // Load subtitles JSON safely
+  // ignore: unused_local_variable
   final subtitleJson = jsonEncode({
   "audio_segments": [
     {
@@ -164,12 +163,12 @@ void main() async {
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: VideoWithSubtitles(
-        videoPath: "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4",
-        subtitleData: subtitleJson,
-        format: SubtitleFormat.json,
-      ),
-      // home: VideoWithTextOverlay(),
+      // home: VideoWithSubtitles(
+      //   videoPath: "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4",
+      //   subtitleData: subtitleJson,
+      //   format: SubtitleFormat.json,
+      // ),
+      home: VideoWithTextOverlay(),
     ),
   );
 }
