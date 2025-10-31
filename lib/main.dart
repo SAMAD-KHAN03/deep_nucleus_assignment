@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
+import 'package:myapp/video_with_subtitle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
@@ -164,7 +165,7 @@ void main() async {
     MaterialApp(
       debugShowCheckedModeBanner: false,
       // home: VideoWithSubtitles(
-      //   videoPath: "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4",
+      //   videoPath: "https://transcribed-data-bucket.s3.ap-south-1.amazonaws.com/12345/xyz101/abc123.mp4",
       //   subtitleData: subtitleJson,
       //   format: SubtitleFormat.json,
       // ),

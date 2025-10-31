@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:math';
-
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:myapp/custom_color_slider.dart';
+import 'package:myapp/fetch_video_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stroke_text/stroke_text.dart';
+import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:io';
 
@@ -25,10 +27,9 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   List<_TextOverlay> texts = [];
   int? _editingIndex;
   Color _selectedColor = Colors.white;
-
   Future<List<Map<String, dynamic>>> _prepareMetadata() async {
     final prefs = await SharedPreferences.getInstance();
-    String? storedUuid = prefs.getString('userid');
+    final storedUuid = prefs.getString('userid');
 
     if (_controller == null || !_controller!.value.isInitialized) return [];
 
@@ -51,22 +52,23 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
     final offsetY = (renderBoxHeight - videoHeight * scale) / 2;
 
     return texts.map((t) {
-      // Account for the 60px UI offset
+      // Adjust for any fixed UI padding (if needed)
       final uiX = t.position.dx + 60;
       final uiY = t.position.dy;
-      
+
       // Convert Flutter UI coordinates to original video coordinates
       final videoX = ((uiX - offsetX) / scale).clamp(0.0, videoWidth);
       final videoY = ((uiY - offsetY) / scale).clamp(0.0, videoHeight);
 
-      // Send NORMALIZED coordinates (0-1 range)
+      // Return metadata object
       return {
         "userid": storedUuid,
         "text": t.text,
-        "x": (videoX / videoWidth).clamp(0.0, 1.0),  // Normalized X
-        "y": (videoY / videoHeight).clamp(0.0, 1.0), // Normalized Y
+        "x": (videoX / videoWidth).clamp(0.0, 1.0), // normalized
+        "y": (videoY / videoHeight).clamp(0.0, 1.0), // normalized
         "scale": t.scale,
-        "color": "#${t.color.value.toRadixString(16).substring(2).padLeft(6, '0')}", // Remove alpha channel
+        "color":
+            "#${t.color.value.toRadixString(16).substring(2).padLeft(6, '0')}",
       };
     }).toList();
   }
@@ -76,7 +78,13 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
 
     final videoPath = _controller!.dataSource.replaceFirst('file://', '');
     final videoFile = File(videoPath);
+    final videobytes = await videoFile.readAsBytes();
+    final videoHash = sha256.convert(videobytes);
     final metadata = await _prepareMetadata();
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedUuid = prefs.getString('userid');
+    final videoId = Uuid().v4().split('-')[0]; // generate or get from your app
 
     final dio = Dio(
       BaseOptions(
@@ -84,14 +92,15 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
         receiveTimeout: const Duration(seconds: 120),
       ),
     );
-    final url = "http://3.110.56.232:3000/render-video";
 
-    FormData formData = FormData.fromMap({
-      "video": await MultipartFile.fromFile(
-        videoFile.path,
-        filename: "video.mp4",
-      ),
+    final url = "http://65.0.7.70:3000/process-video";
+
+    final formData = FormData.fromMap({
+      "userId": storedUuid,
+      "videoId": videoId,
+      "videoHash": videoHash,
       "metadata": jsonEncode(metadata),
+      "video": await MultipartFile.fromFile(videoFile.path),
     });
 
     try {
@@ -102,12 +111,12 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
       );
 
       if (response.statusCode == 200) {
-        print("Upload successful: ${response.data}");
+        print("✅ Upload successful: ${response.data}");
       } else {
-        print("Upload failed: ${response.statusCode}");
+        print("❌ Upload failed: ${response.statusCode}");
       }
     } catch (e, st) {
-      print("Upload error: $e");
+      print("🚨 Upload error: $e");
       print(st);
     }
   }
@@ -148,12 +157,14 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
   // Pick video from gallery or record from camera
   Future<void> _pickVideo(ImageSource source) async {
     try {
-      print("Opening ${source == ImageSource.camera ? 'camera' : 'gallery'}...");
-      
+      print(
+        "Opening ${source == ImageSource.camera ? 'camera' : 'gallery'}...",
+      );
+
       final XFile? file = await _picker.pickVideo(
         source: source,
-        maxDuration: source == ImageSource.camera 
-            ? const Duration(minutes: 5) 
+        maxDuration: source == ImageSource.camera
+            ? const Duration(minutes: 5)
             : null,
       );
 
@@ -163,30 +174,34 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
         print("Loading video from: ${file.path}");
         _controller?.dispose();
         _controller = VideoPlayerController.file(File(file.path))
-          ..initialize().then((_) {
-            print("Video initialized successfully");
-            _controller!.setLooping(true);
-            _controller!.play();
-            if (mounted) {
-              setState(() {});
-            }
-          }).catchError((error) {
-            print("Error initializing video: $error");
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error loading video: $error'),
-                  duration: const Duration(seconds: 3),
-                ),
-              );
-            }
-          });
+          ..initialize()
+              .then((_) {
+                print("Video initialized successfully");
+                _controller!.setLooping(true);
+                _controller!.play();
+                if (mounted) {
+                  setState(() {});
+                }
+              })
+              .catchError((error) {
+                print("Error initializing video: $error");
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error loading video: $error'),
+                      duration: const Duration(seconds: 3),
+                    ),
+                  );
+                }
+              });
       } else {
         print("No video selected/recorded (user may have cancelled)");
         if (mounted && source == ImageSource.camera) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Recording cancelled or permission denied. Please enable camera and microphone permissions in Settings.'),
+              content: Text(
+                'Recording cancelled or permission denied. Please enable camera and microphone permissions in Settings.',
+              ),
               duration: Duration(seconds: 4),
             ),
           );
@@ -198,12 +213,46 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${e.toString()}. Please check app permissions in Settings.'),
+            content: Text(
+              'Error: ${e.toString()}. Please check app permissions in Settings.',
+            ),
             duration: const Duration(seconds: 4),
           ),
         );
       }
     }
+  }
+
+  bool _isNavigating = false;
+
+  // Add this helper method to handle navigation safely:
+  Future<void> _safePopNavigation() async {
+    if (_isNavigating) return; // Prevent multiple pops
+
+    setState(() {
+      _isNavigating = true;
+    });
+
+    try {
+      _controller?.pause();
+      await _controller?.dispose();
+      _controller = null;
+    } catch (e) {
+      print('Error disposing controller: $e');
+    }
+
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    // Reset flag after a delay in case navigation fails
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() {
+          _isNavigating = false;
+        });
+      }
+    });
   }
 
   void _addText(Offset position) {
@@ -235,108 +284,170 @@ class _VideoWithTextOverlayState extends State<VideoWithTextOverlay> {
 
   @override
   void dispose() {
-    _controller?.dispose();
+    if (_controller != null) {
+      _controller!.pause();
+      _controller!.removeListener(() {});
+      _controller!.dispose();
+      _controller = null;
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      body: _controller == null || !_controller!.value.isInitialized
-          ? Center(
-              child: ElevatedButton(
-                onPressed: _showVideoSourceDialog,
-                child: const Text("Pick or Record Video"),
-              ),
-            )
-          : GestureDetector(
-              onDoubleTapDown: (details) {
-                if (_editingIndex == null) {
-                  _addText(details.localPosition);
-                }
-              },
-              child: Stack(
-                children: [
-                  // Full-screen video
-                  SizedBox.expand(
-                    child: FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _controller!.value.size.width,
-                        height: _controller!.value.size.height,
-                        child: VideoPlayer(_controller!),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
+        if (!didPop) {
+          await _safePopNavigation();
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: _controller == null || !_controller!.value.isInitialized
+            ? Center(
+                child: Column(
+                  spacing: 20,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _showVideoSourceDialog,
+                      child: const Text("Pick or Record Video"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (BuildContext context) =>
+                                VideoListScreen(),
+                          ),
+                        );
+                      },
+                      child: Text("Downlaods"),
+                    ),
+                  ],
+                ),
+              )
+            : GestureDetector(
+                onDoubleTapDown: (details) {
+                  if (_editingIndex == null) {
+                    _addText(details.localPosition);
+                  }
+                },
+                child: Stack(
+                  children: [
+                    // Full-screen video
+                    SizedBox.expand(
+                      child: FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: _controller!.value.size.width,
+                          height: _controller!.value.size.height,
+                          child: VideoPlayer(_controller!),
+                        ),
                       ),
                     ),
-                  ),
-                  // Render all text overlays
-                  for (int i = 0; i < texts.length; i++)
-                    _StretchableTextWidget(
-                      key: ValueKey(i),
-                      overlay: texts[i],
-                      isEditing: _editingIndex == i,
-                      onUpdate: () {
-                        setState(() {}); // refresh UI
-                      },
-                      onDelete: () {
-                        setState(() {
-                          texts.removeAt(i);
-                          if (_editingIndex == i) {
-                            _editingIndex = null;
-                          }
-                        });
-                      },
-                      onStartEdit: () {
-                        _setEditingIndex(i);
-                      },
-                      onEndEdit: () {
-                        if (_editingIndex == i) {
-                          _setEditingIndex(null);
-                        }
-                      },
-                    ),
-                  // Color Picker - shown only when editing
-                  if (_editingIndex != null)
-                    Positioned(
-                      left: 20,
-                      top: 0,
-                      bottom: 0,
-                      child: CustomColorSlider(
-                        onColorChanged: _updateTextColor,
-                        initialColor: _selectedColor,
-                      ),
-                    ),
-                  // Done button at top-right
-                  Positioned(
-                    top: 40,
-                    right: 20,
-                    child: SafeArea(
-                      child: FloatingActionButton(
-                        mini: true,
-                        backgroundColor: Colors.black54,
-                        onPressed: () async {
-                          await _uploadVideoWithMetadata();
+                    // Render all text overlays
+                    for (int i = 0; i < texts.length; i++)
+                      _StretchableTextWidget(
+                        key: ValueKey(i),
+                        overlay: texts[i],
+                        isEditing: _editingIndex == i,
+                        onUpdate: () {
+                          setState(() {}); // refresh UI
                         },
-                        child: const Icon(Icons.done),
+                        onDelete: () {
+                          setState(() {
+                            texts.removeAt(i);
+                            if (_editingIndex == i) {
+                              _editingIndex = null;
+                            }
+                          });
+                        },
+                        onStartEdit: () {
+                          _setEditingIndex(i);
+                        },
+                        onEndEdit: () {
+                          if (_editingIndex == i) {
+                            _setEditingIndex(null);
+                          }
+                        },
+                      ),
+                    // Color Picker - shown only when editing
+                    if (_editingIndex != null)
+                      Positioned(
+                        left: 20,
+                        top: 0,
+                        bottom: 0,
+                        child: CustomColorSlider(
+                          onColorChanged: _updateTextColor,
+                          initialColor: _selectedColor,
+                        ),
+                      ),
+
+                    // Back button:
+                    Positioned(
+                      top: 40,
+                      left: 20,
+                      child: SafeArea(
+                        child: FloatingActionButton(
+                          mini: true,
+                          backgroundColor: Colors.black54,
+                          onPressed: _safePopNavigation,
+                          child: const Icon(Icons.arrow_back),
+                        ),
                       ),
                     ),
-                  ),
-                  // Floating back button
-                  Positioned(
-                    top: 40,
-                    left: 20,
-                    child: SafeArea(
-                      child: FloatingActionButton(
-                        mini: true,
-                        backgroundColor: Colors.black54,
-                        onPressed: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back),
+
+                    // Done button:
+                    Positioned(
+                      top: 40,
+                      right: 20,
+                      child: SafeArea(
+                        child: FloatingActionButton(
+                          mini: true,
+                          backgroundColor: Colors.black54,
+                          onPressed: () async {
+                            if (_isNavigating) return;
+
+                            setState(() {
+                              _isNavigating = true;
+                            });
+
+                            await _uploadVideoWithMetadata();
+
+                            try {
+                              _controller?.pause();
+                              await _controller?.dispose();
+                              _controller = null;
+                            } catch (e) {
+                              print('Error disposing controller: $e');
+                            }
+
+                            if (mounted && Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            }
+
+                            // Reset flag after a delay in case navigation fails
+                            Future.delayed(
+                              const Duration(milliseconds: 500),
+                              () {
+                                if (mounted) {
+                                  setState(() {
+                                    _isNavigating = false;
+                                  });
+                                }
+                              },
+                            );
+                          },
+                          child: const Icon(Icons.done),
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }
